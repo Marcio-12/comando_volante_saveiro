@@ -1,127 +1,65 @@
-# Comando Volante - Volkswagen Saveiro
+# Comando Volante Saveiro
 
-Firmware para ESP32 que lê uma rede de botões resistivos no GPIO 36 e
-apresenta o dispositivo ao tablet Android como teclado Bluetooth HID. Os
-comandos de mídia são enviados sem aplicativo residente no tablet.
-
-## Índice detalhado por arquivo e linha
-
-As linhas abaixo correspondem à versão inicial deste projeto. Use-as como
-índice rápido no VS Code (`Ctrl+G`).
-
-### `platformio.ini`
-
-| Linhas | Conteúdo |
-|---|---|
-| 1-4 | Ambiente `esp32dev`, plataforma Espressif32 e framework Arduino |
-| 5 | Velocidade do monitor serial |
-| 7-8 | Dependência `ESP32-BLE-Keyboard` |
-
-### `include/configuracao.h`
-
-| Linhas | Conteúdo |
-|---|---|
-| 1-2 | Include guard do arquivo |
-| 4 | GPIO 36 / VP / ADC1_CH0 |
-| 6-8 | Seção de calibração dos botões |
-| 11-12 | Faixa ADC do Volume + |
-| 15-16 | Faixa ADC do Volume - |
-| 19-20 | Faixa ADC da próxima faixa |
-| 23-24 | Faixa ADC da faixa anterior |
-| 27-28 | Faixa ADC do Play/Pause/Mute |
-| 31-34 | Debounce de 250 ms e média de 10 leituras |
-| 36 | Fim do include guard |
-
-### `include/botoes.h`
-
-| Linhas | Conteúdo |
-|---|---|
-| 1-3 | Includes e dependência da configuração |
-| 5-12 | Enumeração dos estados dos botões |
-| 14-26 | Interface pública de `BotoesVolante` |
-| 28-31 | Métodos privados do filtro e mapeamento |
-| 33-44 | Estado interno da média móvel e do debounce |
-
-### `src/botoes.cpp`
-
-| Linhas | Conteúdo |
-|---|---|
-| 3-4 | Construtor do leitor |
-| 6-20 | Inicialização do ADC e preenchimento inicial do filtro |
-| 22-33 | Média móvel de 10 amostras |
-| 35-55 | Mapeamento das faixas ADC para os botões |
-| 57-86 | Debounce, detecção de pressionamento e eventos únicos |
-| 88-95 | Acesso à leitura filtrada e ao estado estável |
-
-### `src/main.cpp`
-
-| Linhas | Conteúdo |
-|---|---|
-| 1-6 | Includes, instância HID e leitor dos botões |
-| 8-28 | Conversão dos botões para teclas de mídia HID |
-| 30-47 | Verificação de conexão e nova publicidade BLE |
-| 49-56 | Inicialização serial, ADC e Bluetooth |
-| 58-73 | Loop principal de leitura e envio dos comandos |
+Firmware PlatformIO para ESP32 dedicado à leitura da rede resistiva dos
+comandos do volante e ao envio de teclas de mídia por Bluetooth HID.
 
 ## Estrutura
 
 ```text
 comando_volante/
 ├── include/
-│   ├── configuracao.h
-│   └── botoes.h
+│   ├── configuracao.h   # Pino do volante, calibração ADC e tempos
+│   └── botoes.h         # Declaração do leitor e dos comandos HID
 ├── src/
-│   ├── botoes.cpp
-│   └── main.cpp
-├── platformio.ini
+│   ├── botoes.cpp       # Média móvel, debounce e envio das teclas
+│   └── main.cpp         # Inicialização do Bluetooth e loop principal
+├── platformio.ini       # Ambiente ESP32 e dependência BleKeyboard
 └── README.md
 ```
 
-## Calibração dos botões
+## Arquivo de configuração
 
-Os valores em `include/configuracao.h` são apenas exemplos. Para calibrar:
+Em `include/configuracao.h`, ajuste as faixas `MIN` e `MAX` após medir os
+valores da rede resistiva:
 
-1. Monte o divisor/rede resistiva do volante com o ESP32 desligado.
-2. Garanta que o sinal aplicado ao GPIO 36 nunca ultrapasse 3,3 V.
-3. Abra o Monitor Serial ou use uma leitura temporária de `analogRead()`.
-4. Registre o ADC sem botão e com cada botão pressionado.
-5. Defina uma faixa `MIN` a `MAX` com margem para ruído para cada botão.
-6. Confirme que as faixas não se sobrepõem.
-7. Faça o upload novamente e teste cada tecla no tablet.
+| Botão | Constantes | Tecla enviada |
+|---|---|---|
+| Aumentar volume | `VOL_UP_ADC_MIN/MAX` | Volume + |
+| Diminuir volume | `VOL_DOWN_ADC_MIN/MAX` | Volume - |
+| Próxima faixa | `NEXT_TRACK_ADC_MIN/MAX` | Próxima faixa |
+| Faixa anterior | `PREV_TRACK_ADC_MIN/MAX` | Faixa anterior |
+| Play/Pause | `PLAY_PAUSE_ADC_MIN/MAX` | Play/Pause |
 
-O ADC configurado tem resolução de 12 bits, portanto o intervalo nominal é de
-0 a 4095. O GPIO 36 é somente entrada e pertence ao ADC1, que é apropriado
-para uso simultâneo com Bluetooth.
+O ADC utiliza resolução de 12 bits, com valores nominais de 0 a 4095. O
+GPIO 36 é o pino VP do ESP32 e pertence ao ADC1. As faixas não devem se
+sobrepor.
 
-## Instalação e pareamento
+## Funcionamento
+
+`BotoesVolante` mantém uma média móvel de 10 amostras e aplica debounce de
+250 ms. Cada pressionamento confirmado gera somente um evento. Solturas e
+leituras fora das faixas calibradas não enviam comandos.
+
+O dispositivo HID aparece com o nome **Comando Volante Saveiro**. O tablet
+Android deve ser pareado com esse dispositivo para receber os comandos de
+mídia.
+
+## Compilação e gravação
 
 1. Instale a extensão PlatformIO no VS Code.
 2. Abra a pasta `comando_volante`.
 3. Execute **PlatformIO: Build**.
-4. Grave o firmware com **PlatformIO: Upload**.
-5. Abra o Bluetooth do Android e pareie com `Saveiro Volante`.
-6. Reproduza mídia e teste os cinco comandos.
-
-O Android recebe os eventos como teclas de mídia HID padrão. Não é necessário
-instalar ou manter um aplicativo em segundo plano.
-
-## Reconexão Bluetooth
-
-Enquanto o tablet estiver desconectado, o loop continua executando e verifica
-o estado do Bluetooth. A cada 5 segundos, a publicidade é reativada por
-`BleKeyboard::begin()`, permitindo novo pareamento ou reconexão do host.
-Depois que o tablet estiver conectado, os eventos só são enviados após o
-debounce e somente uma vez por novo pressionamento.
+4. Conecte o ESP32 por USB.
+5. Execute **PlatformIO: Upload**.
+6. Abra o monitor serial em 115200.
+7. Pareie o tablet com **Comando Volante Saveiro**.
 
 ## Segurança elétrica
 
-Não conecte diretamente sinais automotivos de 12 V ao ESP32. Use uma rede
-resistiva apropriada, proteção contra surtos e limite de tensão compatível com
-o GPIO. Valide o circuito com multímetro antes de conectar a alimentação e o
-chicote do veículo.
+Não conecte sinais automotivos de 12 V diretamente ao ESP32. Use uma rede
+resistiva adequada, proteção contra surtos e limite máximo de 3,3 V no GPIO 36.
+Faça a calibração com multímetro antes de conectar o chicote do veículo.
 
-## Dependências
+## Dependência
 
-- ESP32 com suporte Arduino pela plataforma `espressif32`.
-- Biblioteca `ESP32-BLE-Keyboard`, declarada em `platformio.ini`.
-- Tablet Android com suporte a teclas de mídia Bluetooth HID.
+- `https://github.com/T-vK/ESP32-BLE-Keyboard.git`

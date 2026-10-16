@@ -1,5 +1,7 @@
 #include "botoes.h"
 
+#include <BleKeyboard.h>
+
 BotoesVolante::BotoesVolante(uint8_t pino) : pino_(pino) {}
 
 void BotoesVolante::iniciar() {
@@ -7,12 +9,13 @@ void BotoesVolante::iniciar() {
     analogReadResolution(12);
     analogSetPinAttenuation(pino_, ADC_11db);
 
-    const uint16_t primeiraLeitura = static_cast<uint16_t>(analogRead(pino_));
+    const uint16_t primeiraLeitura =
+        static_cast<uint16_t>(analogRead(pino_));
     for (uint8_t i = 0; i < MAX_AMOSTRAS; ++i) {
         amostras_[i] = primeiraLeitura;
     }
+
     somaAmostras_ = static_cast<uint32_t>(primeiraLeitura) * MAX_AMOSTRAS;
-    quantidadeAmostras_ = MAX_AMOSTRAS;
     leituraFiltrada_ = primeiraLeitura;
     candidato_ = mapearLeitura(primeiraLeitura);
     estavel_ = candidato_;
@@ -25,9 +28,10 @@ uint16_t BotoesVolante::lerMediaMovel() {
     somaAmostras_ -= amostras_[indiceAmostra_];
     amostras_[indiceAmostra_] = leitura;
     somaAmostras_ += leitura;
-    indiceAmostra_ = static_cast<uint8_t>((indiceAmostra_ + 1) % MAX_AMOSTRAS);
+    indiceAmostra_ =
+        static_cast<uint8_t>((indiceAmostra_ + 1) % MAX_AMOSTRAS);
 
-    return static_cast<uint16_t>(somaAmostras_ / quantidadeAmostras_);
+    return static_cast<uint16_t>(somaAmostras_ / MAX_AMOSTRAS);
 }
 
 BotaoVolante BotoesVolante::mapearLeitura(uint16_t leitura) const {
@@ -49,7 +53,30 @@ BotaoVolante BotoesVolante::mapearLeitura(uint16_t leitura) const {
     return BotaoVolante::Nenhum;
 }
 
-BotaoVolante BotoesVolante::atualizar(uint32_t agoraMs) {
+void BotoesVolante::enviarComando(BleKeyboard& teclado,
+                                   BotaoVolante botao) const {
+    switch (botao) {
+    case BotaoVolante::VolumeMais:
+        teclado.write(KEY_MEDIA_VOLUME_UP);
+        break;
+    case BotaoVolante::VolumeMenos:
+        teclado.write(KEY_MEDIA_VOLUME_DOWN);
+        break;
+    case BotaoVolante::ProximaFaixa:
+        teclado.write(KEY_MEDIA_NEXT_TRACK);
+        break;
+    case BotaoVolante::FaixaAnterior:
+        teclado.write(KEY_MEDIA_PREVIOUS_TRACK);
+        break;
+    case BotaoVolante::PlayPause:
+        teclado.write(KEY_MEDIA_PLAY_PAUSE);
+        break;
+    case BotaoVolante::Nenhum:
+        break;
+    }
+}
+
+void BotoesVolante::verificar(BleKeyboard& teclado, uint32_t agoraMs) {
     if (!iniciado_) {
         iniciar();
     }
@@ -60,23 +87,22 @@ BotaoVolante BotoesVolante::atualizar(uint32_t agoraMs) {
     if (leituraAtual != candidato_) {
         candidato_ = leituraAtual;
         inicioCandidatoMs_ = agoraMs;
-        return BotaoVolante::Nenhum;
+        return;
     }
 
     if (candidato_ == estavel_ ||
         static_cast<uint32_t>(agoraMs - inicioCandidatoMs_) <
             TEMPO_DEBOUNCE_MS) {
-        return BotaoVolante::Nenhum;
+        return;
     }
 
     const BotaoVolante estadoAnterior = estavel_;
     estavel_ = candidato_;
 
-    // Eventos de soltura nao enviam comandos; o pressionamento envia um
-    // evento unico depois do debounce.
-    return estadoAnterior == BotaoVolante::Nenhum
-               ? estavel_
-               : BotaoVolante::Nenhum;
+    if (estadoAnterior == BotaoVolante::Nenhum &&
+        estavel_ != BotaoVolante::Nenhum && teclado.isConnected()) {
+        enviarComando(teclado, estavel_);
+    }
 }
 
 uint16_t BotoesVolante::leituraFiltrada() const {
